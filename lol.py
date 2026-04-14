@@ -36,8 +36,9 @@ class RunBot:
     def __init__(self):
         options = Options()
         options.add_argument("--headless")
-
-        service = Service("/home/snowy/geckodriver")
+        waterfox_path = "/home/snowy/waterfox/waterfox" #---change path------
+        options.binary_location = waterfox_path
+        service = Service("/home/snowy/geckodriver") #-----change path-------
 
         self.driver = webdriver.Firefox(service=service, options=options)
         self.wait = WebDriverWait(self.driver, 30)
