@@ -117,9 +117,8 @@ class RunBot:
         self.sevens = self.tabby * Decimal("6.9")
         self.eights = self.tabby * Decimal("7.9")
         self.session_start_bal = real_bal
-        self.tracked_balance = self.state["tracked_balance"]
-        
-        if (real_bal == self.tracked_balance) and self.state:
+       
+        if self.state:
             print("📂 [RECOVERY] Resuming state...")
             self.cat = self.state["cat"]
             self.felix = self.state["felix"]
@@ -193,21 +192,22 @@ class RunBot:
                 # --- STRATEGY ---
                 if abs(self.shadow - current_real) < Decimal("1e-8") or abs(self.smokey - current_real) < Decimal("1e-8"):
                     mighty = ((math.floor(self.tracked_balance / self.tens)) * self.tens)
-
+                    father = mighty
+                    mother = self.tracked_balance
                     if self.tracked_balance >= (self.orgy + (self.tens * self.fart)):
                         self.cat = self.tabby
                         self.fart = 1
-                        self.felix = mighty
-                        self.orgy = mighty
+                        self.felix = father
+                        self.orgy = father
 
                     if (self.tracked_balance>(mighty + self.sevens)) and (self.tracked_balance < (mighty + self.eights)) and self.tracked_balance < self.felix:
                         self.cat *= 2
                         self.fart = 0
-                        self.felix = self.tracked_balance
+                        self.felix = mother
 
-                    if (self.tracked_balance>(mighty + self.sevens)) and (self.tracked_balance < (mighty + self.eights)) and self.tracked_balance > self.felix:
+                    if (self.tracked_balance>(mighty + self.sevens)) and (self.tracked_balance < (mighty + self.eights)) and mother > self.felix:
                         self.cat *= 2
-                        self.felix = self.tracked_balance
+                        self.felix = mother
 
                     self.set_value("#pct_chance", self.purr)
                     self.set_value("#pct_bet", f"{self.cat:.8f}")
