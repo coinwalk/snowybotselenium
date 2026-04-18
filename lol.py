@@ -1,15 +1,9 @@
 import time
 import json
 import math
-import sys
 import getpass
-import socket
-import random
 from datetime import datetime
 from decimal import Decimal, getcontext
-
-# Set precision for 8 decimal places (Satoshi standard)
-getcontext().prec = 20
 
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
@@ -18,250 +12,166 @@ from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-# -------------------------------
+getcontext().prec = 20
+
 USERNAME = input("Enter username: ")
 PASSWORD = getpass.getpass("Enter password: ")
-
 URL = "https://just-dice.com"
 STATE_FILE = "bot_state.json"
 
-# -------------------------------
 def save_state(data):
     try:
         serializable = {k: str(v) if isinstance(v, Decimal) else v for k, v in data.items()}
         with open(STATE_FILE, "w") as f:
             json.dump(serializable, f)
-    except Exception as e:
-        print(f"⚠️ Save error: {e}")
+    except Exception as e: pass
 
 def load_state():
     try:
         with open(STATE_FILE, "r") as f:
             data = json.load(f)
-            decimal_keys = ["cat", "felix", "orgy", "shadow", "smokey", "tracked_balance", "initial_balance"]
-            for k in decimal_keys:
-                if k in data:
-                    data[k] = Decimal(data[k])
+            keys = ["cat", "felix", "orgy", "shadow", "smokey", "tracked_balance", "initial_balance", "last_balance"]
+            for k in keys:
+                if k in data: data[k] = Decimal(data[k])
             return data
-    except:
-        return None
+    except: return None
 
-# -------------------------------
 class RunBot:
     def __init__(self):
-        self.recovery_attempts = 0
         options = Options()
         options.add_argument("--headless")
         options.binary_location = "/home/snowy/waterfox/waterfox"
         service = Service("/home/snowy/geckodriver")
-
         self.driver = webdriver.Firefox(service=service, options=options)
         self.wait = WebDriverWait(self.driver, 30)
-        self.session_start_bal = None 
-        self.last_activity_time = time.time() 
-        self.safe_start()
+        self.last_activity_time = time.time()
 
-    def safe_start(self):
+    def start(self):
+        print(f"✅ [{datetime.now().strftime('%H:%M:%S')}] Page loading...")
+        self.driver.get(URL)
+        time.sleep(10)
+        
+        # Clear overlay
+        self.driver.execute_script("document.querySelectorAll('.fancybox-overlay').forEach(e => e.remove());")
+        
+        # Click Account
         try:
-            self.driver.get(URL)
-            print(f"✅ [{datetime.now().strftime('%H:%M:%S')}] Page loading...")
-            time.sleep(8)
-            self.handle_popup()
-        except:
-            self.full_recovery()
-
-    def handle_popup(self):
-        try:
-            self.driver.execute_script("""
-                let overlay = document.querySelector('.fancybox-overlay');
-                if (overlay) overlay.remove();
-                document.body.classList.remove('fancybox-lock');
-            """)
+            acc_link = self.wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(text(), 'Account')]")))
+            self.driver.execute_script("arguments[0].click();", acc_link)
         except: pass
-        time.sleep(2)
-        self.open_login()
 
-    def open_login(self):
-        try:
-            self.wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "a")))
-            for l in self.driver.find_elements(By.TAG_NAME, "a"):
-                if "Account" in l.text:
-                    self.driver.execute_script("arguments[0].click();", l)
-                    break
-            self.wait.until(EC.presence_of_element_located((By.ID, "myuser")))
-            self.do_login()
-        except:
-            self.full_recovery()
-
-    def do_login(self):
+        # Login
+        self.wait.until(EC.presence_of_element_located((By.ID, "myuser")))
         self.driver.find_element(By.ID, "myuser").send_keys(USERNAME)
         self.driver.find_element(By.ID, "mypass").send_keys(PASSWORD)
-        self.driver.execute_script("arguments[0].click();", self.driver.find_element(By.ID, "myok"))
         print("⏳ Logging in...")
-        time.sleep(8)
-        self.wait_balance()
+        self.driver.execute_script("arguments[0].click();", self.driver.find_element(By.ID, "myok"))
+        time.sleep(15)
 
-    def wait_balance(self):
+        # Get Balance and Init
         while True:
-            bal = self.get_value("#pct_balance")
-            if bal is not None:
-                self.state = load_state()
-                self.init_betting(Decimal(str(bal)))
-                return
-            time.sleep(0.5)
+            bal_str = self.driver.find_element(By.ID, "pct_balance").get_attribute("value")
+            if bal_str:
+                self.setup_and_jumpstart(Decimal(bal_str))
+                break
+            time.sleep(1)
 
-    def init_betting(self, real_bal):
+    def setup_and_jumpstart(self, real_bal):
         self.tabby = (real_bal / Decimal("144000")).quantize(Decimal("1.00000000"))
-        self.purr = 49.5
         self.tens = self.tabby * 10
         self.sevens = self.tabby * Decimal("6.9")
         self.eights = self.tabby * Decimal("7.9")
-        self.session_start_bal = real_bal
-       
+        
+        self.state = load_state()
         if self.state:
             print("📂 [RECOVERY] Resuming state...")
             self.cat = self.state["cat"]
             self.felix = self.state["felix"]
             self.orgy = self.state["orgy"]
-            self.shadow = self.state["shadow"]
-            self.smokey = self.state["smokey"]
             self.fart = self.state["fart"]
-            self.tracked_balance = self.state["tracked_balance"]
             self.initial_balance = self.state.get("initial_balance", real_bal)
-            self.last_balance = real_bal
+            # Adjust tracked balance for bets missed during downtime
+            drift = real_bal - self.state.get("last_balance", real_bal)
+            self.tracked_balance = self.state.get("tracked_balance", real_bal) + drift
         else:
-            print("🆕 Fresh start initialized.")
+            print("🆕 Fresh start.")
             self.cat = self.tabby
             self.fart = 1
-            self.tracked_balance = real_bal
-            self.initial_balance = real_bal
-            self.last_balance = real_bal
-            mighty = ((math.floor(real_bal / self.tens)) * self.tens)
-            self.felix = mighty
-            self.orgy = mighty
-            self.shadow = real_bal
-            self.smokey = real_bal
+            self.tracked_balance = self.initial_balance = real_bal
+            mighty = (math.floor(real_bal / self.tens)) * self.tens
+            self.felix = self.orgy = mighty
 
+        self.last_balance = real_bal
         self.last_activity_time = time.time()
-        self.run_click("#b_min")
-        self.loop()
+        
+        # --- THE JUMPSTART ---
+        print("🚀 JUMPSTART: Firing initial bet to engage loop...")
+        self.fire_bet()
 
-    def loop(self):
-        while True:
-            try:
-                # --- WATCHDOG ---
-                if time.time() - self.last_activity_time > 55:
-                    print(f"⚠️ [WATCHDOG] Inactive for 55s! Reloading...")
-                    self.full_recovery()
-                    return
+    def fire_bet(self):
+        """Sets UI values and clicks Lo"""
+        self.driver.execute_script(f'document.querySelector("#pct_chance").value="49.5";')
+        self.driver.execute_script(f'document.querySelector("#pct_bet").value="{self.cat:.8f}";')
+        
+        # Re-calc target shadows for safety
+        self.shadow = (self.last_balance + self.cat).quantize(Decimal("1.00000000"))
+        self.smokey = (self.last_balance - self.cat).quantize(Decimal("1.00000000"))
+        
+        btn = self.driver.find_element(By.ID, "a_lo")
+        self.driver.execute_script("arguments[0].click();", btn)
 
-                raw = self.get_value("#pct_balance")
-                if raw is None:
-                    time.sleep(0.2)
-                    continue
-                
-                current_real = Decimal(str(raw))
+    def tick(self):
+        if time.time() - self.last_activity_time > 660:
+            print("⚠️ Watchdog: No activity.")
+            return False
 
-                # --- LOGGING UPDATED WITH REAL BALANCE ---
-                if ((float(current_real - self.last_balance)>=float(0-self.cat)) and (current_real != self.last_balance)):
-                    delta = current_real - self.last_balance
-                    self.tracked_balance += delta
-                    self.last_balance = current_real
-                    self.last_activity_time = time.time() 
-                    
-                    # Calculations
-                    session_p = current_real - self.session_start_bal
-                    life_p = self.tracked_balance - self.initial_balance
-                    t_stamp = datetime.now().strftime('%H:%M:%S')
-                    
-                    # Clean Log Line
-                    print(f"🕒 [{t_stamp}] | Bal: {current_real:.8f} | Delta: {delta:+.8f} | Sess: {session_p:+.8f} | Life: {life_p:+.8f}")
-
-                    save_state({
-                        "cat": self.cat, "felix": self.felix, "orgy": self.orgy,
-                        "shadow": self.shadow, "smokey": self.smokey, "fart": self.fart,
-                        "tracked_balance": self.tracked_balance,
-                        "initial_balance": self.initial_balance
-                    })
-
-                if ((float(current_real - self.last_balance)<float(0-self.cat)) and current_real != self.last_balance):
-                    print("fuck off hacker")
-                    sys.exit()
-    
-
-                # --- STRATEGY ---
-                if abs(self.shadow - current_real) < Decimal("1e-8") or abs(self.smokey - current_real) < Decimal("1e-8"):
-                    mighty = ((math.floor(self.tracked_balance / self.tens)) * self.tens)
-                    father = mighty
-                    mother = self.tracked_balance
-                    if self.tracked_balance >= (self.orgy + (self.tens * self.fart)):
-                        self.cat = self.tabby
-                        self.fart = 1
-                        self.felix = father
-                        self.orgy = father
-
-                    if (self.tracked_balance>(mighty + self.sevens)) and (self.tracked_balance < (mighty + self.eights)) and self.tracked_balance < self.felix:
-                        self.cat *= 2
-                        self.fart = 0
-                        self.felix = mother
-
-                    if (self.tracked_balance>(mighty + self.sevens)) and (self.tracked_balance < (mighty + self.eights)) and mother > self.felix:
-                        self.cat *= 2
-                        self.felix = mother
-
-                    self.set_value("#pct_chance", self.purr)
-                    self.set_value("#pct_bet", f"{self.cat:.8f}")
-
-                    self.shadow = (current_real + self.cat).quantize(Decimal("1.00000000"))
-                    self.smokey = (current_real - self.cat).quantize(Decimal("1.00000000"))
-
-                    self.run_click("#a_lo")
-
-                time.sleep(0.1)
-
-            except Exception as e:
-                print(f"⚠️ Loop Error: {e}")
-                time.sleep(1)
-
-    def full_recovery(self):
-        print("♻️ Reloading...")
-        try: self.driver.quit()
-        except: pass
-        time.sleep(5)
-        self.__init__()
-
-    def get_value(self, selector):
         try:
-            el = self.driver.find_element(By.CSS_SELECTOR, selector)
-            return float(el.get_attribute("value"))
-        except: return None
+            bal_str = self.driver.find_element(By.ID, "pct_balance").get_attribute("value")
+            current_real = Decimal(bal_str)
+        except: return True
 
-    def set_value(self, selector, val):
-        self.driver.execute_script(f'document.querySelector("{selector}").value="{val}";')
+        if current_real != self.last_balance:
+            delta = current_real - self.last_balance
+            self.tracked_balance += delta
+            self.last_balance = current_real
+            self.last_activity_time = time.time() 
+            
+            print(f"🕒 [{datetime.now().strftime('%H:%M:%S')}] | Bal: {current_real:.8f} | Delta: {delta:+.8f} | Life: {(self.tracked_balance - self.initial_balance):+.8f}")
 
-    def run_click(self, selector):
-        try:
-            el = self.driver.find_element(By.CSS_SELECTOR, selector)
-            self.driver.execute_script("arguments[0].click();", el)
-        except: pass
+            # Strategy
+            mighty = (math.floor(self.tracked_balance / self.tens)) * self.tens
+            if self.tracked_balance >= (self.orgy + (self.tens * self.fart)):
+                self.cat, self.fart = self.tabby, 1
+                self.felix = self.orgy = mighty
+
+            if ((self.tracked_balance > (mighty + self.sevens) and (self.tracked_balance < (mighty + self.eights))) and self.tracked_balance < self.felix):
+                    self.fart = 0
+                    self.cat *= 2
+                    self.felix = self.tracked_balance
+
+            if ((self.tracked_balance > (mighty + self.sevens) and (self.tracked_balance < (mighty + self.eights))) and self.tracked_balance > self.felix):
+                    self.cat *= 2
+                    self.felix = self.tracked_balance
+
+            save_state({
+                "cat": self.cat, "felix": self.felix, "orgy": self.orgy, "fart": self.fart,
+                "tracked_balance": self.tracked_balance, "initial_balance": self.initial_balance,
+                "last_balance": self.last_balance
+            })
+            
+            self.fire_bet()
+
+        return True
 
 if __name__ == "__main__":
-    bot = None
-    try:
+    while True:
         bot = RunBot()
-    except SystemExit:
-        # This catches sys.exit() calls
-        print("👋 Bot shutting down via script command.")
-    except KeyboardInterrupt:
-        print("\n🛑 Manual stop (Ctrl+C).")
-    finally:
-        if bot and hasattr(bot, 'driver'):
-            print("🧹 Closing browser and saving final state...")
-            # Save the last known numbers
-            save_state({
-                "cat": bot.cat, "felix": bot.felix, "orgy": bot.orgy,
-                "shadow": bot.shadow, "smokey": bot.smokey, "fart": bot.fart,
-                "tracked_balance": bot.tracked_balance,
-                "initial_balance": bot.initial_balance
-            })
+        try:
+            bot.start()
+            while bot.tick():
+                time.sleep(0.1)
+        except KeyboardInterrupt: break
+        except Exception as e: print(f"💥 Error: {e}")
+        finally:
             bot.driver.quit()
+            time.sleep(5)
