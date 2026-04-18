@@ -177,7 +177,6 @@ class RunBot:
             in_zone = (mighty + self.sevens) < self.tracked_balance < (mighty + self.eights)
             
             if in_zone:
-                try:
                     if self.tracked_balance < self.felix:
                         self.fart = 0
                         self.cat *= 2
@@ -185,8 +184,6 @@ class RunBot:
                     elif self.tracked_balance > self.felix:
                         self.cat *= 2
                         self.felix = self.tracked_balance
-                except:
-                    pass # Do nothing on error and keep moving
 
 
 
